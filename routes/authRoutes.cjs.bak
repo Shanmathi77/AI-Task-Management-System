@@ -1,0 +1,132 @@
+﻿const express = require("express");
+const bcrypt = require("bcrypt");
+const jwt = require("jsonwebtoken");
+
+console.log("[authRoutes] module loaded");
+
+module.exports = (PG_POOL) => {
+  console.log("[authRoutes] initializing with PG_POOL");
+  const router = express.Router();
+
+  const JWT_SECRET = process.env.JWT_SECRET || "dev-secret-key";
+  const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || "7d";
+
+  function createToken(payload) {
+    return jwt.sign(payload, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
+  }
+
+  if (!PG_POOL || typeof PG_POOL.query !== "function") {
+    console.warn("[authRoutes] WARNING: PG_POOL looks invalid. DB calls may fail.");
+  }
+
+  router.post("/signup", async (req, res) => {
+    try {
+      console.log("[authRoutes] POST /signup called");
+      const { email: rawEmail, password, role } = req.body || {};
+      const email = typeof rawEmail === "string" ? rawEmail.trim().toLowerCase() : "";
+
+      if (!email || !password) {
+        return res.status(400).json({ ok: false, message: "Email and password are required" });
+      }
+
+      const exists = await PG_POOL.query("SELECT id FROM users WHERE email = $1", [email]);
+      if (exists.rows.length > 0) {
+        return res.status(409).json({ ok: false, message: "Email already registered" });
+      }
+
+      const hashed = await bcrypt.hash(password, 10);
+
+      const result = await PG_POOL.query(
+        "INSERT INTO users (email, password, role) VALUES ($1, $2, $3) RETURNING id, email, role, active_team_id",
+        [email, hashed, role || "member"]
+      );
+
+      const user = result.rows[0];
+      const token = createToken({ id: user.id, email: user.email, role: user.role });
+
+      return res.json({
+        ok: true,
+        message: "Signup successful",
+        token,
+        user: {
+          id: user.id,
+          email: user.email,
+          role: user.role,
+          active_team_id: user.active_team_id ?? null,
+        },
+      });
+    } catch (e) {
+      console.error("[authRoutes] Signup error:", e && (e.stack || e.message || e));
+      return res.status(500).json({ ok: false, message: "Signup failed" });
+    }
+  });
+
+  router.post("/login", async (req, res) => {
+    try {
+      console.log("[authRoutes] POST /login called");
+      const { email: rawEmail, password } = req.body || {};
+      const email = typeof rawEmail === "string" ? rawEmail.trim().toLowerCase() : "";
+
+      if (!email || !password) {
+        return res.status(400).json({ ok: false, message: "Email and password are required" });
+      }
+
+      const result = await PG_POOL.query("SELECT id, email, password, role, active_team_id FROM users WHERE email = $1", [email]);
+
+      if (result.rows.length === 0) {
+        return res.status(400).json({ ok: false, message: "Invalid email or password" });
+      }
+
+      const user = result.rows[0];
+      const match = await bcrypt.compare(password, user.password);
+      if (!match) {
+        return res.status(400).json({ ok: false, message: "Invalid email or password" });
+      }
+
+      const token = createToken({ id: user.id, email: user.email, role: user.role });
+
+      return res.json({
+        ok: true,
+        message: "Login successful",
+        token,
+        user: {
+          id: user.id,
+          email: user.email,
+          role: user.role,
+          active_team_id: user.active_team_id ?? null,
+        },
+      });
+    } catch (e) {
+      console.error("[authRoutes] Login error:", e && (e.stack || e.message || e));
+      return res.status(500).json({ ok: false, message: "Login failed" });
+    }
+  });
+
+  router.get("/me", async (req, res) => {
+    try {
+      console.log("[authRoutes] GET /me called");
+      const auth = req.headers.authorization || "";
+      const m = auth.match(/^Bearer (.+)$/i);
+      if (!m) return res.status(401).json({ ok: false, message: "Missing token" });
+      const token = m[1];
+
+      let payload;
+      try {
+        payload = jwt.verify(token, JWT_SECRET);
+      } catch (err) {
+        return res.status(401).json({ ok: false, message: "Invalid token" });
+      }
+
+      const result = await PG_POOL.query("SELECT id, email, role, active_team_id FROM users WHERE id = $1", [payload.id]);
+      if (result.rows.length === 0) return res.status(404).json({ ok: false, message: "User not found" });
+
+      const user = result.rows[0];
+      return res.json({ ok: true, user: { id: user.id, email: user.email, role: user.role, active_team_id: user.active_team_id } });
+    } catch (e) {
+      console.error("[authRoutes] /me error:", e && (e.stack || e.message || e));
+      return res.status(500).json({ ok: false, message: "Could not fetch user" });
+    }
+  });
+
+  return router;
+};

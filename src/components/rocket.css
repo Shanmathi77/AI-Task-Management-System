@@ -1,0 +1,155 @@
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700&display=swap');
+
+/* FULLSCREEN STAGE */
+.rocket-stage {
+  position: fixed;
+  inset: 0;
+  background: radial-gradient(
+    ellipse at center,
+    #020617 0%,
+    #01030a 40%,
+    #000000 100%
+  );
+  overflow: hidden;
+  z-index: 9999;
+}
+
+/* 🚀 ROCKET VIDEO */
+.rocket-video {
+  position: absolute;
+  bottom: -20%;
+  left: -20%;
+  width: min(90vw, 480px);
+  background: #020617; 
+  mix-blend-mode: lighten;
+
+  filter:
+    brightness(1.25)
+    contrast(1.35)
+    drop-shadow(0 0 25px rgba(56,189,248,0.6))
+    drop-shadow(0 0 70px rgba(56,189,248,0.5));
+
+  pointer-events: none;
+}
+
+/* 🔥 ROCKET SPOTLIGHT TRAIL */
+.rocket-trail {
+  position: absolute;
+  width: 1400px;
+  height: 280px;
+  pointer-events: none;
+  transform-origin: left center;
+
+  background: linear-gradient(
+    90deg,
+    rgba(56,189,248,0.9) 0%,
+    rgba(56,189,248,0.6) 20%,
+    rgba(56,189,248,0.3) 50%,
+    rgba(56,189,248,0.1) 75%,
+    transparent 100%
+  );
+
+  filter: blur(52px);
+  mix-blend-mode: screen;
+  border-radius: 50% 0 0 50%;
+
+  animation: pulse 2s infinite alternate;
+}
+
+@keyframes pulse {
+  0% { filter: blur(48px); opacity: 0.75; }
+  50% { filter: blur(56px); opacity: 1; }
+  100% { filter: blur(48px); opacity: 0.75; }
+}
+
+/* HIDE VIDEO SQUARE EDGES */
+.rocket-mask {
+  position: absolute;
+  inset: -40%;
+  pointer-events: none;
+
+  background: radial-gradient(
+    ellipse at center,
+    transparent 40%,
+    rgba(2,6,23,0.35) 55%,
+    rgba(0,0,0,0.85) 100%
+  );
+  filter: blur(22px);
+}
+
+/* LOADING UI */
+.loading-panel {
+  position: absolute;
+  bottom: 12%;
+  width: 100%;
+  text-align: center;
+}
+
+.loading-panel h1 {
+  font-size: clamp(2.2rem, 5vw, 3.2rem);
+  color: #e0f2fe;
+  text-shadow: 0 0 40px rgba(56,189,248,0.8);
+}
+
+.progress {
+  margin-top: 14px;
+  font-size: 3rem;
+  font-weight: bold;
+  color: #38bdf8;
+}
+
+/* STARFIELD CANVAS */
+.starfield-canvas {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background: transparent;
+}
+
+/* Apply stylish font globally */
+body, h1, .loading-panel h1, .page-flip h1 {
+  font-family: 'Orbitron', sans-serif;
+}
+
+/* PAGE FLIP ANIMATION */
+.page-flip {
+  position: fixed;
+  inset: 0;
+  background: #01030a;
+  transform-origin: top right;
+  transform: rotateY(-90deg);
+  backface-visibility: hidden;
+  z-index: 10000; /* Make sure it’s above rocket-stage */
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  transition: transform 1.2s ease-in-out; /* Smooth flip */
+}
+
+.page-flip.show {
+  transform: rotateY(0deg); /* ✅ Corrected */
+}
+
+.page-flip h1 {
+  font-size: clamp(4rem, 8vw, 6rem);
+  color: #38bdf8;
+  text-shadow:
+    0 0 10px #38bdf8,
+    0 0 20px #38bdf8,
+    0 0 30px #0ea5e9,
+    0 0 40px #0ea5e9,
+    0 0 60px #0ea5e9;
+}
+
+.rocket-video {
+  transition: transform 0.6s ease-in-out, opacity 0.6s ease-in-out;
+}
+.rocket-trail {
+  transition: transform 0.6s ease-in-out, opacity 0.6s ease-in-out;
+}
+.rocket-mask {
+  transition: opacity 0.6s ease-in-out;
+}

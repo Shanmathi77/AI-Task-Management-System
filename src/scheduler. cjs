@@ -1,0 +1,75 @@
+// backend/src/scheduler.cjs
+// Simple scheduler: supports schedule strings like "5m", "1h", "1d" (minutes/hours/days).
+// It queries workflow_rules with schedule != NULL and enabled=true and triggers runs when interval elapsed.
+// Keep this lightweight and safe for dev use.
+
+const ms = (n) => Number(n) || 0;
+
+function parseIntervalToMs(schedule) {
+  if (!schedule || typeof schedule !== "string") return null;
+  const s = schedule.trim().toLowerCase();
+  // accepted formats: "5m", "30m", "1h", "2d"
+  const match = s.match(/^(\d+)\s*(m|h|d)$/);
+  if (!match) return null;
+  const val = Number(match[1]);
+  const unit = match[2];
+  if (unit === "m") return val * 60_000;
+  if (unit === "h") return val * 60_60_000;
+  if (unit === "d") return val * 24 * 60 * 60_000;
+  return null;
+}
+
+module.exports = function startScheduler(PG_POOL, opts = {}) {
+  const tickMs = typeof opts.tickMs === "number" ? opts.tickMs : 60_000; // default 1 min
+  let running = true;
+
+  async function tick() {
+    if (!running) return;
+    try {
+      // get candidate rules
+      const q = `SELECT * FROM workflow_rules WHERE enabled IS DISTINCT FROM false AND schedule IS NOT NULL`;
+      const r = await PG_POOL.query(q).catch(() => ({ rows: [] }));
+      const now = new Date();
+      for (const rule of (r.rows || [])) {
+        try {
+          const schedule = rule.schedule;
+          const lastRun = rule.last_run ? new Date(rule.last_run) : null;
+          const intervalMs = parseIntervalToMs(schedule);
+          if (!intervalMs) {
+            // skip rules we can't parse
+            continue;
+          }
+          const shouldRun = !lastRun || (now - lastRun) >= intervalMs;
+          if (!shouldRun) continue;
+
+          // simulate run: insert into automation_logs and update last_run
+          const insertSql = `INSERT INTO automation_logs (rule_id, workspace_id, event_key, payload, success, created_at)
+                             VALUES ($1,$2,$3,$4,true,now()) RETURNING id`;
+          const payload = JSON.stringify({ triggeredBy: "scheduler", ts: now.toISOString() });
+          await PG_POOL.query(insertSql, [rule.id, rule.workspace_id || null, rule.event_key || null, payload]).catch(()=>null);
+
+          // update last_run
+          await PG_POOL.query(`UPDATE workflow_rules SET last_run = now() WHERE id = $1`, [rule.id]).catch(()=>null);
+
+          // small console trace
+          console.log(`[scheduler] triggered rule id=${rule.id} schedule=${schedule}`);
+        } catch (inner) {
+          console.warn("[scheduler] rule execution error", inner && inner.message ? inner.message : inner);
+        }
+      }
+    } catch (err) {
+      console.error("[scheduler] tick error:", err && err.message ? err.message : err);
+    } finally {
+      // schedule next tick (simple setTimeout to avoid overlapping long ticks)
+      if (running) setTimeout(tick, tickMs);
+    }
+  }
+
+  // bootstrap
+  setTimeout(tick, 5000); // start after short delay
+  console.log("[scheduler] started (tickMs=" + tickMs + ")");
+
+  return {
+    stop() { running = false; console.log("[scheduler] stopped"); },
+  };
+};
